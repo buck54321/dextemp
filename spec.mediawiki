@@ -298,15 +298,19 @@ verification and to facilitate server mesh operation.
 
 Orders are processed one at a time. Each order is matched according to its type.
 
-1. If this current order is a '''cancel order''', any corresponding standing limit order is removed from the list and the cancel order is considered filled. If a cancellation is processed before the order that it cancels, the cancellation will fail, and will need to be re-submitted.
+1. If the order is a '''cancel order''', any corresponding standing limit order is removed from the list and the cancel order is considered filled. If a cancellation is processed before the order that it cancels, the cancellation will fail, and will need to be re-submitted. That is, cancel orders do not affect down-queue orders, only standing orders.
 
-2. If the order is a limit order than cannot immediately match ('''a maker'''), it is added to the standing orders. It is immediately able to match orders further down in the queue.
+2. If the order is a limit order with time in force ''standing'' that cannot match immediately (a '''maker'''), it is added to the standing orders. It is immediately able to match orders further down the queue.
 
-3. If the order is a '''taker''', it is matched against the best available standing order. Clients for both orders are notified and the settlement process begins. The orders are set aside for monitoring. If a limit order with time in force "standing" on either side of the match is only partially filled, it is added to the standing orders with the appropriate modifications and is immediately available for matching again. 
+3. If the order is a '''taker''', it is matched against the best available standing order. Clients for both orders are notified and the settlement process begins. The orders are set aside for monitoring. If a limit order with time in force ''standing'' on either side of the match is only partially filled, it is added to the standing orders with the appropriate modifications and is immediately available for matching again.
 
-In the special case of a standing limit order in the queue matching immediately, 
-the price assigned to the match is the average of the two orders, with a split 
-atom going to the maker.
+Any unmatched quantity on a limit order with time in force ''immediate'' is 
+left unfilled. 
+Market orders and immediate limit orders cannot match orders further down the 
+queue. 
+
+When a limit order matches a limit order, the price assigned to the match is the 
+average of the two orders, with a split atom going to the maker.
 
 The process continues with the next order in the list and iterates until all 
 orders have been processed.
@@ -399,12 +403,11 @@ trade assets on chain A for assets on chain B.
 Limit orders are for the trade of assets at a rate no higher (buy) or lower 
 (sell) than a specified price. 
 The client may specify the "time in force" of a limit order as one of: (a) 
-''Standing'', which remains on the books until filled or cancelled, or (b) 
-''Immediate'', which will be cancelled if it is not filled during during epoch 
-order matching. As such, the ''Immediate'' option is intended for limit orders 
-with a price that crosses the spread (i.e. a taker rather than a maker).
-The order <code>quantity</code> must be an integer multiple of the lot size 
-(see 3.1.4). 
+''standing'', which remains on the books until filled or cancelled, or (b) 
+''immediate'', which can complete execution wholly or partially unfilled. As 
+such, the ''immediate'' option is intended for limit orders with a price that 
+crosses the spread (i.e. a taker rather than a maker). The order 
+<code>quantity</code> must be an integer multiple of the lot size (see 3.1.4). 
 
 # Client submits limit order as a signed message that includes the fields listed below, where signatures demonstrate control of the unspent funds and the long-lived identity of the client.
 
@@ -438,7 +441,7 @@ as described in Section 5.1.
 |-
 | price       || int    || price, in atoms/Satoshi or similar (*1e8)
 |-
-| timeinforce || string || one of "standing" or "immediate"
+| timeinforce || string || one of ''standing'' or ''immediate''
 |-
 | utxotxid    || string || transaction hash associated with the utxo
 |-
@@ -511,9 +514,9 @@ The successful response will contain a unique order ID that must be referenced f
 |-
 |}
 
-Market order cannot be cancelled by the client.
-At the end of the match cycle, any unfilled portion of a market order will be 
-cancelled by the server. 
+Market orders cannot be cancelled.
+Any portion of the requested quantity that does not match immediately is left 
+unfilled. 
 
 ===Cancel Order===
 

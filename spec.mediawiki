@@ -599,7 +599,7 @@ process, and to illustrate how to handle a perfect match, a partial fill, and
 multiple matches within an epoch. For the sake of illustration, the following 
 simplifications are made.
 
-<img src="spec/images/ab-profiles.svg" align="right">
+<img src="spec/images/ab-profiles.png" align="right">
 # The lot size for the market is 1 DCR. 
 # All backing funds for the orders are in the form of a single UTXO.
 # There are no fees. 
@@ -616,7 +616,7 @@ denominated in BTC.
 In the most basic case, Alice and a trader named Bob are the only participants 
 and their orders match perfectly.
 
-<img src="spec/images/alice-order.svg" align="left">
+<img src="spec/images/alice-order.png" align="left">
 '''A1: Alice places a limit order''' to sell 3 DCR at 0.1 BTC per DCR for a 
 total of 0.3 BTC. 
 As a limit order, Alice must specify both the quantity and the price, as a rate, 
@@ -625,7 +625,7 @@ Alice signs the order information. The signature provides proof of the
 order and justifies any penalties imposed on Alice should she fail to follow 
 through on a trade.
 
-<img src="spec/images/bob-order.svg" align="right">
+<img src="spec/images/bob-order.png" align="right">
 '''A2''': During some later epoch, '''Bob places a market order''' to buy DCR 
 with BTC at the best available price. 
 Bob’s order will contain both an address and a signature. 
@@ -639,7 +639,7 @@ the book and set aside for monitoring.
 The DEX informs both clients that a match has been made and provides Bob with 
 Alice’s address. 
 
-<img src="spec/images/ab-match.svg">
+<img src="spec/images/ab-match.png">
 
 '''A4''': Because Alice is the maker, she will broadcast her initialization
 transaction first. 
@@ -662,7 +662,7 @@ unspent for a specified amount of time. Alice sets her timelock to 48 hours.
 She informs the DEX of the transaction details, which the DEX relays to Bob. 
 Alice '''does not''' reveal the key that she created. 
 
-<img src="spec/images/alice-init.svg">
+<img src="spec/images/alice-init.png">
 
 '''A5: Bob inspects Alice's transaction and retreives the lock. 
 After the requisite number of confirmations, Bob prepares his initialization 
@@ -679,27 +679,28 @@ could potentially spend the DCR output before Bob.
 He informs the DEX of the transaction details, and the DEX relays the 
 information to Alice. 
 
-<img src="spec/images/bob-init.svg">
+<img src="spec/images/bob-init.png">
 
 '''A6: Alice prepares a redemption transaction''' that spends the output from 
 Bob’s initialization transaction to her own address.
 In order to spend the Bitcoin from Bob’s transaction, she needs to provide the 
 key created in step 4.
 
-'''Alice broadcasts her redemption transaction'''.
+'''Alice broadcasts her redemption transaction''' to the Bitcoin network.
 Though both the DEX and Bob are capable of monitoring for the transaction, it 
 is expected that Alice informs the DEX server of the transaction details anyway. 
 The DEX server will notify Bob of the details.
 
-<img src="spec/images/alice-redeem.svg">
+<img src="spec/images/alice-redeem.png">
 
 '''A7: Bob prepares his redemption transaction''' using the key gleaned from 
 Alice’s redemption transaction and the output from Alice’s initialization 
 transaction.
 
-'''Bob broadcasts his redemption transaction, completing the atomic swap.'''
+'''Bob broadcasts his redemption transaction to the Decred network, completing 
+the atomic swap.'''
 
-<img src="spec/images/bob-redeem.svg">
+<img src="spec/images/bob-redeem.png">
 
 ====Case B: Multi-taker with partial fill====
 
@@ -711,7 +712,7 @@ found by the DEX is not perfect this time.
 '''B2''': Bob places a market order for 0.1 BTC worth of DCR at market price. 
 A new client, Carl, places an identical market order for 0.1 BTC worth of DCR.
 
-<img src="spec/images/abc-order.svg">
+<img src="spec/images/abc-order.png">
 
 '''B3''': The DEX finds the match and informs all parties, providing Alice with 
 Bob and Carl's addresses. 
@@ -720,9 +721,9 @@ In this case, the DEX does not remove the order from the order book, instead
 just marking it partially filled and calculating the remaining quantity. The 
 order is returned to the order book and is immediately able to match again.
 
-<img src="spec/images/abc-match.svg">
+<img src="spec/images/abc-match.png">
 
-<img src="spec/images/a-init-bc.svg" align="right">
+<img src="spec/images/a-init-bc.png" align="right">
 '''B4''': As the maker, Alice goes first again. 
 She groups her matches from the epoch and creates two different keys, one for 
 Bob and one for Carl. She sets her timelocks to 48 hours. 
@@ -730,7 +731,7 @@ Bob and one for Carl. She sets her timelocks to 48 hours.
 informs the DEX about the transaction details, which the DEX relays to Bob and 
 Carl.
 
-<img src="spec/images/bc-init.svg" align="right">
+<img src="spec/images/bc-init.png" align="right">
 '''B5''' After waiting the requisite number of confirmations, Bob and Carl 
 prepare their initialization transactions using the locks from Alice's
 transaction. They broadcast their transactions.

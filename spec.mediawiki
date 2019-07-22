@@ -222,25 +222,41 @@ Registration fees will be configurable by the exchange operator.
 The clients will cover on-chain transaction fees at a fee rate set by the DEX 
 operator. 
 Failure to adhere to the specified fee rate will result in a conduct violation.
+
 As part of any submitted order a client is required to demonstrate control of
 the funds for both the order itself, and the maximum fees that could be 
 assessed. 
 
-Some on-chain fees are higher than others. Large order will likely be filled 
-with several matches, requiring more transactions and therefore more fees. 
-The DEX operator must find a balance between low fees, which are preferable from 
-an accounting standpoint, or higher fees, which can decrease settlement time by 
-reducing the number of blocks before the transaction is mined. For most assets, 
-very low fees are likely possible without increasing the time until mined. 
+As part of any submitted order, a client is required to demonstrate control of 
+funds that will back the atomic swap, and ensure that the backing funds are 
+sufficient to create the swap contract transactions transferring the full order 
+quantity as well as covering the network's transaction fees at the specified 
+rate.
+
+Total on-chain fees associated with an order will increase as the number of swap 
+transactions required to settle the order increases. Large orders are likely to 
+be settled with several matches, requiring more and/or larger transactions and 
+more fees. 
+See the [[#Atomic Settlement|atomic settlement]] section for examples of simple 
+and complex matches and how that affects the swap transaction sizes.
+
+Fee rates can vary greatly between assets.
+For many assets, low fees are possible without increasing the time until mined.
+Transaction fees tend to rise as an asset pushes the limits of on-chain scaling.
+For high-fee assets, the DEX operator must find a balance between lower fees, 
+which are preferable from an accounting standpoint but may result in long 
+settlement times, or higher fees, which can decrease settlement time by reducing 
+the number of blocks before the transaction is mined. 
 
 ===Asset Variables===
 
 There are a number of asset-specific variables that must be known by the client.
 
 The '''lot size''' for an asset serves as both the minimum order quantity and 
-the order quantity increment. In particular, for ''lot size''  '''''l''''', the 
-requested ''order quantity'', '''''Q''''' for any limit order or a market sell 
-order must satisfy
+the order quantity increment for limit orders and market buy orders, which are 
+quantified in the market's base asset.
+In particular, for ''lot size''  '''''l''''', the requested ''order quantity'', 
+'''''Q''''', must satisfy
 
 <!--Q = n l, n \in \{1, 2, 3, ...\}-->
 [[File:spec/images/lot-sizes.png]]
@@ -254,8 +270,20 @@ The '''rate''', '''''r''''', of a limit order must be an integer multiple of the
 
 The DEX operator specifies an on-chain transaction '''fee rate''' 
 (units ''atoms/byte'') used when 
-[[#Calculating_Transaction_Fees|calculating the fees]] for the initialization
-transaction.
+[[#Calculating_Transaction_Fees|calculating the fees]] for initialization 
+transactions.
+
+Each asset will also have a '''minimum number of confirmations'''. This is the 
+number of confirmations that are required for backing UTXOs as well as the 
+number required during settlement on the first swap transaction before the 
+second is broadcast.
+The transaction being mined is considered the first confirmation, with an 
+additional confirmation for each block connected to the chain descending from 
+the transaction's block, unless the chain has been invalidated by some consensus 
+mechanism.
+
+The minimum confirmation rule is waived for a change output from a transaction 
+involved in a DEX-monitored trade. 
 
 Asset info should be requested by the user immediately after connecting.
 
@@ -285,6 +313,10 @@ The asset objects contain the relevant info.
 | feerate  || int || the fee rate for transactions (atoms/byte)
 |-
 | swapsize || int || the size of the initialization transaction (bytes)
+|-
+| minconf  || int || minimum confirmations for backing UTXOs and swap transactions
+|-
+| scripts  || &#91;string&#93; || acceptable backing UTXO script types. minimum &#91;"P2PKH"&#93;
 |}
 
 ===Epoch-based Order Matching===
@@ -436,7 +468,7 @@ There are three available types of order.
 
 The order book holds only limit orders with time in force ''standing'' that have
 not completely filled or been cancelled. All other orders are only valid for one
-[[#Epoch-based_Order_Matching|epoch match cycle]].
+[[#Epochbased_Order_Matching|epoch match cycle]].
 
 ===Connection Persistence===
 
@@ -547,7 +579,7 @@ All orders must be signed by the client and the server.
 The basic signing procedure will involve serializing order data into a byte array 
 following a specific procedure that can be replicated on the server. 
 The serialized data is then signed using the client's 
-[[#Identities_based_on_Public_Key_Infrastructure_(PKI)_Key_Pairs|private account key]].
+[[#Identities_based_on_Public_Key_Infrastructure_PKI_Key_Pairs|private account key]].
 
 All integer encoding for all serialized structures is big endian. 
 
@@ -635,11 +667,11 @@ crosses the spread (i.e. a taker rather than a maker). The
 {|
 ! field      !! size (bytes)  !! description
 |-
-| prefix     || 65 || [[#Order_Creation|the order prefix]]
+| prefix     || 65 || [[#utxo-preparation|the order prefix]]
 |-
 | UTXO count || 1  || The number of backing UTXOs
 |-
-| UTXO data  || 36 x count || [[#Order_Creation|sequence of UTXO data]]
+| UTXO data  || 36 x count || [[#utxo-preparation|sequence of UTXO data]]
 |-
 | direction  || 1 || 0 for buy, 1 for sell
 |-
@@ -709,11 +741,11 @@ the epoch match cycle) is left unfilled.
 {|
 ! field      !! size (bytes)  !! description
 |-
-| prefix     || 65 || [[#Order_Creation|the order prefix]]
+| prefix     || 65 || [[utxo-preparation|the order prefix]]
 |-
 | UTXO count || 1  || The number of backing UTXOs
 |-
-| UTXO data  || 36 x count || [[#Order_Creation|sequence of UTXO data]]
+| UTXO data  || 36 x count || [[#utxo-preparation|sequence of UTXO data]]
 |-
 | direction  || 1 || 0 for buy, 1 for sell
 |-
@@ -753,11 +785,12 @@ For a market with lot size '''''l''''', and for which there is a best known
 standing sell order price rate, '''''r''''', the <code>ordersize</code>, 
 '''''Q''''' must satisfy the relation '''''Q > b<sub>m</sub> l r'''''. 
 If the best rate increases before the order is matched, the order will still
-result in a fill as long as the rate changes by less than
+result in a fill as long as the price does not surpass 
 ~'''''b<sub>m</sub> r'''''. 
 If the ''market buy buffer'' is set too low or the market is particularly 
-volatile and the price increase exceeds '''''b<sub>m</sub> r''''', the order 
-is considered executed but unfilled and there is no change to the account's 
+volatile and the price exceeds '''''b<sub>m</sub> r''''', an order that was 
+accepted but is now too small to match is considered executed but unfilled and 
+there is no change to the account's 
 [[#Rules_of_Community_Conduct|cancellation statistics]].
 
 ===Cancel Order===
@@ -808,7 +841,7 @@ design and discourages certain types of spoofing.
 {|
 ! field      !! size (bytes)  !! description
 |-
-| prefix     || 65 || [[#Order_Creation|the order prefix]]
+| prefix     || 65 || [[#utxo-preparation|the order prefix]]
 |-
 | orderid    || 8  || the orderid returned when the order was placed.
 |}

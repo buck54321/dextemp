@@ -108,23 +108,22 @@ Match notification via HTTP polling or other request interval-based methods are
 thus not suitable for the DEX system.
 Persistent, full-duplex communication is critical to minimizing communication
 latencies and wasted bandwidth.
-WebSockets are chosen as the default and preferred communications protocol for
+Websockets ([https://tools.ietf.org/html/rfc6455 &#91;4&#93;]) are chosen as the default and preferred communications protocol for
 the DEX exchange API.
-In addition to fulfilling the aforementioned needs, WebSockets are now a
+In addition to fulfilling the aforementioned needs, Websockets are now a
 well-established technology with client software available for integration in
 virtually all popular programming languages.
 
-Websocket connections are secured by encryption on Transport Layer
-Security (TLS) version 1.3 protocol
-[https://tools.ietf.org/html/rfc8446 &#91;4&#93;] connections.
+Websocket messages are secured by encryption on Transport Layer
+Security (TLS) [https://tools.ietf.org/html/rfc8446 &#91;5&#93;] connections.
 
 ===JSON-RPC===
 
 JavaScript Object Notation - Remote Procedure Call v2.0 (JSON-RPC 2.0) is a
 message formatting protocol for client-server communications
-[https://www.jsonrpc.org/specification &#91;5&#93;].
-The DEX server API uses JSON-RPC exclusively for both inbound and
-outbound client communications.
+[https://www.jsonrpc.org/specification &#91;6&#93;].
+The DEX API uses JSON-RPC exclusively for both inbound and outbound client
+communications.
 The JSON-RPC structure is simple and flexible.
 
 <pre>
@@ -145,7 +144,7 @@ The JSON-RPC structure is simple and flexible.
 }
 </pre>
 
-The <code>method</code> is the "remote procedure" being called, analagous to
+The <code>method</code> is the "remote procedure" being called, analogous to
 calling a function.
 Most parameters are passed as part of a <code>params</code> object or array.
 Parameters will vary with method.
@@ -161,9 +160,9 @@ The opposite is true in the case of a success.
 ===HTTP===
 
 An API using HTTP for message transport may be provided for basic account
-management and server status queries, however WebSocket connections are to be
-the sole means for placing, monitoring, and executing orders in the processes
-described in Sections 5 and 6.
+management and server status queries, however websocket connections are to be
+the sole means for
+[[#Client_Order_Management|placing, monitoring, and executing orders]].
 The primary reason for limiting the scope of the HTTP API is to eliminate client
 polling for rapidly changing resources, such as order status API endpoints.
 
@@ -208,10 +207,16 @@ transactions.
 Each asset will also have a '''minimum number of confirmations'''. This is the
 number of confirmations that are required for backing UTXOs as well as the
 number required during settlement on the first swap transaction before the
-second swap transacation is broadcast.
+second swap transaction is broadcast.
 
 The minimum confirmation rule is waived for a change output from a transaction
 involved in a DEX-monitored trade.
+
+The '''broadcast timeout''' is the amount of time a client has to broadcast a
+transaction. For the maker, the broadcast time is measured from the time of
+match notification.
+For the taker, timeout is measured from  the time when the maker's swap receives
+its <code>minconf</code><sup>th</sup> confirmation.
 
 Asset info should be requested by the user immediately after connecting.
 
@@ -227,6 +232,8 @@ Asset info should be requested by the user immediately after connecting.
 | cancelmax || float || the [[Rule_2_An_accounts_cancellation_ratio_must_remain_below_the_threshold|cancellation threshold]]
 |-
 | assets    || &#91;object&#93; || list of Asset objects (definition below)
+|-
+| btimeout  || int   || the broadcast timeout
 |}
 
 '''Asset object'''
@@ -276,10 +283,10 @@ quantity as well as covering the network's transaction fees at the specified
 rate.
 
 Total on-chain fees associated with an order will increase as the number of swap
-transactions required to settle the order increases. Large orders are likely to
-be settled with several matches, requiring more and/or larger transactions and
-more fees.
-See the [[#Atomic Settlement|atomic settlement]] section for examples of simple
+transactions required to settle the order increases. Maximum fees paid
+[[#Calculating_Transaction_Fees|vary linearly with order size]], but the actual
+fees realized can be significantly less than the maximum.
+See the [[#Atomic_Settlement|atomic settlement]] section for examples of simple
 and complex matches and how that affects the swap transaction sizes.
 
 Fee rates can vary greatly between assets.
@@ -334,9 +341,9 @@ Specifically for hash function '''''f''''', the seed hash,
 <!--H_{seed} = f(f(order_1) || f(order_2) || ... || f(order_N))-->
 [[File:spec/images/seed-eq.png]]
 
-where '''''order<sub>i</sub>''''' represents the order ID of the ith order in a
-lexicographically sorted list of order IDs and '''''||''''' indicates
-concatenation.
+where '''''order<sub>i</sub>''''' represents the order ID of the
+'''''i<sup>th</sup>''''' order in a lexicographically sorted list of
+[[#Order_ID|order IDs]] and '''''||''''' indicates concatenation.
 
 The order IDs and final hash are published at the start of the matching process.
 This is done so that the shuffling may be independently computed for external
@@ -372,7 +379,8 @@ throughout the order placement and execution processes.
 All data submitted to the exchange server from a client must be signed with the
 client's private key and authenticated by the server using the corresponding
 public key, so using client public keys directly for identity purposes is a
-natural simplification that obviates the need for client user names and passwords.
+natural simplification that obviates the need for client user names and
+passwords.
 
 Further, since Politeia, Decred's governance platform, also employs a PKI, the
 same identities may be used on both services to facilitate time-stamping
@@ -412,10 +420,10 @@ An account is uniquely identified by the client's public account key (pubkey),
 which the client provides during registration.
 After registration, the client does identify themselves with their pubkey
 directly.
-Instead, the account is identified by an '''account ID''', which is the first 16
-bytes of the double SHA-256 hash of the client's pubkey,
-'''''<code>sha256(sha256(pubkey))[:16]</code>''''', provided as a hex-encoded
-string in JSON-RPC messages.
+Instead, the account is identified by an '''account ID''', which is the
+double SHA-256 hash of the client's pubkey,
+'''''<code>sha256(sha256(pubkey))</code>''''', provided as a hex-encoded
+string in JSON-RPC calls.
 
 ===Step 1: Registration===
 
@@ -434,7 +442,7 @@ pre-published for further validation.
 |-
 | timestamp || int    || UTC timestamp
 |-
-| sig       || string || hex-encoded registration signature
+| sig       || string || hex-encoded signature of serialized registration. serialization described below
 |}
 
 '''Registration serialization'''
@@ -460,7 +468,7 @@ pre-published for further validation.
 |-
 | timestamp || int    || UNIX timestamp
 |-
-| sig       || string || hex-encoded response signature
+| sig       || string || hex-encoded signature of the serialized response. serialization described below
 |}
 
 '''Response serialization'''
@@ -483,6 +491,7 @@ pre-published for further validation.
 
 The client pays the fee on-chain and notifies the DEX of the transaction detail.
 The fee is paid with a standard P2PKH output to the address received in step 1.
+The server immediately sends their receipt and then closes the connection.
 
 '''JSON-RPC method:''' <code>notifyfee</code>, '''originator: ''' client
 
@@ -497,7 +506,7 @@ The fee is paid with a standard P2PKH output to the address received in step 1.
 |-
 | timestamp || int    || UNIX timestamp
 |-
-| sig       || string || hex-encoded verification signature
+| sig       || string || hex-encoded signature of serialized fee notification. serialization described below
 |}
 
 '''Notification serialization'''
@@ -517,14 +526,16 @@ The fee is paid with a standard P2PKH output to the address received in step 1.
 {|
 ! field     !! type   !! description
 |-
-| sig       || string || hex-encoded server signature of client's notification
+| sig       || string || server hex-encoded signature of client's serialized notification
 |}
 
 ===Step 3: Await Confirmation===
 
-The websocket connection can now be closed. Once the transaction is mined and
-has the [[#Exchange_Variables|requisite number of confirmations]], the client
+Once the transaction is mined and has the
+[[#Exchange_Variables|requisite number of confirmations]], the client
 should [[#Session_Authentication|create a new authenticated connection]].
+If the client attempts to connect before <code>minconf</code> confiramation, the
+DEX should reject the connection outright.
 
 ==Client Order Management==
 
@@ -560,10 +571,10 @@ connection is established, the client will supply their account ID and signature
 |-
 | timestamp || int    || UNIX timestamp
 |-
-| sig       || string || hex-encoded auth signature
+| sig       || string || hex-encoded signature of serialized connection data. serialization described below
 |}
 
-'''Auth serialization'''
+'''Connect serialization'''
 
 {|
 ! field   !! size (bytes) !! description
@@ -575,22 +586,41 @@ connection is established, the client will supply their account ID and signature
 | timestamp || 8  || the client's UNIX timestamp
 |}
 
+'''Connect response'''
+
+If the client connects shortly after a [[#Trade_Suspension|trade suspension]],
+it's possible that trading will not commence until a future epoch. The DEX
+response will indicate when trade did or will begin.
+
+{|
+! field      !! type   !! description
+|-
+| startepoch || int   || the epoch at which trading did or will commence. May be in the future e.g. [[#Trade_Suspension|after maintenance]]
+|}
+
 ===Connection Persistence===
 
-Once submitted, for an order to remain on the book, the client will need to keep
-an open WebSocket connection.
-If the WebSocket connection terminates prematurely, the client's existing orders
-will be cancelled. These cancellations will count toward the client's
+If a connection is lost after placing an order, the client must reconnect and
+complete settlement on any matches made in their absence.
+Regardless of connection status, once a match is made, a client is always
+subject to violation of [[#Rule_1_Every_match_must_be_fully_settled|rule 1]] via
+the [[#Exchange_Variables|broadcast timeout]].
+This is true regardless of connection status.
+
+If a client is disconnected for a full epoch duration, any standing limit orders
+may be auto-cancelled by the server.
+These cancellations will count toward the client's
 [[#Rules_of_Community_Conduct|cancellation ratio]], so could potentially result
 in penalties.
 The client should manage there orders carefully to ensure that this doesn't
 occur.
 
+Market orders and limit orders with time in force ''immediate'' are not
+cancelled under disconnection. Once submitted, these orders will always go
+through a single match cycle.
+
 If a client is in the settlement phase when a connection is dropped, the
-client will be expected to reconnect and complete settlement. Failure to
-reconnect or to act at the appropriate time is considered a violation of
-[[#Rules_of_Community_Conduct|community conduct rules]], so can result in
-penalties.
+client will be expected to reconnect and complete settlement.
 
 ===Order Book Subscriptions===
 
@@ -599,19 +629,19 @@ An order book can be viewed and tracked by subscribing to a market.
 '''JSON-RPC method:''' <code>orderbook</code>, '''originator: ''' client
 
 {|
-! field       !! type   !! description
+! field !! type   !! description
 |-
-| basemarket  || string || currency code for the market's base asset
+| base  || string || currency code for the market's base asset
 |-
-| quotemarket || string || currency code for the market's quote asset
+| quote || string || currency code for the market's quote asset
 |}
 
 The response will contain the complete market order book.
 The order book and all updates include a '''sequence ID''', which increments by
-+1 for every valid order the DEX receives. The client is responsible for
-tracking the sequence ID to ensure all order updates are received. If an update
-appears to be missing, the client should resubscribe to the market to
-synchronize the order book from scratch.
++1 whenever the DEX accepts, removes, or modifies an order.
+The client is responsible for tracking the sequence ID to ensure all order
+updates are received. If an update appears to be missing, the client should
+re-subscribe to the market to synchronize the order book from scratch.
 
 '''Response'''
 
@@ -626,13 +656,13 @@ synchronize the order book from scratch.
 '''JSON OrderBook object'''
 
 {|
-! field  !! type !! description
+! field    !! type !! description
 |-
-| bookid || int  || an order book ID, included with future updates
+| marketid || int || the market ID. included with order book updates.
 |-
-| epoch  || int  || the current epoch
+| epoch    || int  || the current epoch
 |-
-| orders || &#91;object&#93; || A list of Order objects
+| orders   || &#91;object&#93; || A list of Order objects
 |}
 
 '''JSON Order object'''
@@ -648,9 +678,9 @@ synchronize the order book from scratch.
 |-
 | osize   || int    || order size (atoms)
 |-
-| rate    || int    || price rate (atoms per unit counter-asset). only on limit orders
+| rate    || int    || price rate (quote asset per unit base asset, atoms). only set on limit orders
 |-
-| tif     || string || time in force. one of "i" for ''immediate'' or "s" for ''standing''. only on limit orders
+| tif     || string || time in force. one of "i" for ''immediate'' or "s" for ''standing''. only set on limit orders
 |-
 | epoch   || int    || the epoch in which the order was received
 |}
@@ -665,7 +695,7 @@ attribute.
 {|
 ! field   !! type !! description
 |-
-| bookid  || int || the order book ID
+| marketid || int || the market ID
 |-
 | orderid || string || hex-encoded order ID
 |-
@@ -677,7 +707,7 @@ attribute.
 {|
 ! field  !! type!! description
 |-
-| bookid || int    || the order book ID
+| marketid || int || the market ID
 |-
 | order  || object || the Order object
 |-
@@ -693,7 +723,7 @@ IDs and the seed hash used for
 {|
 ! field    !! type !! description
 |-
-| bookid   || int || the order book ID
+| marketid || int || the market ID
 |-
 | epoch    || int || the epoch for which the cycle occurs
 |-
@@ -710,7 +740,7 @@ websocket connection.
 {|
 ! field  !! type !! description
 |-
-| bookid || int || the order book ID
+| marketid || int || the market ID
 |}
 
 ===Order Preparation===
@@ -749,6 +779,10 @@ from '''''R<sub>z</sub>''''' and the ''order quantity'', '''''Q'''''.
 
 [[File:spec/images/base_fees.png]]
 
+The base fees scale linearly with order size, but the actual realized portion of
+the base fees, '''''f<sub>fin</sub>''''', can only be known to fall within a
+range '''''r s <= f<sub>fin</sub> <= f<sub>base</sub> Q '''''.
+
 The client also covers the '''backing fees''' associated with spending their
 backing UTXOs, '''''f<sub>utxo</sub>'''''.
 The client must know how to calculate the script sizes to assess fees.
@@ -781,13 +815,13 @@ As part of the order, the client will submit a list of ''UTXO objects''.
 |-
 | pubkey    || string || hex-encoded public key
 |-
-| sig       || string || hex-encoded signature of serialized utxo data
+| sig       || string || hex-encoded signature of serialized UTXO data. serialization described below
 |-
 | extradata || string || hex-encoded data. the script for P2SH. empty for P2PKH
 |}
 
 The <code>sig</code> is a signature of the UTXO data serialized according to the
-table below. The data is signed with the private key corresonding to
+table below. The data is signed with the private key corresponding to
 <code>pubkey</code>.
 The <code>pubkey</code> must hash to a receiving address in the UTXO's pubkey
 script.
@@ -834,8 +868,8 @@ All order serializations have a common ''prefix structure''.
 ====Order ID====
 
 The order serialization is used to create a unique order ID.
-The ID is defined as the first 16 bytes of the SHA-256 hash of the serialized
-order. It is represented in messaging as a hex-encoded string.
+The ID is defined as the SHA-256 hash of the serialized order.
+It is represented in messaging as a hex-encoded string.
 
 ===Limit Order===
 
@@ -866,7 +900,7 @@ crosses the spread (i.e. a taker rather than a maker). The
 |-
 | ordersize   || int    || order size (atoms)
 |-
-| rate        || int    || price rate (atoms per unit counter-asset)
+| rate        || int    || price rate (quote asset per unit base asset, atoms)
 |-
 | timeinforce || string || one of ''standing'' or ''immediate''
 |-
@@ -874,7 +908,7 @@ crosses the spread (i.e. a taker rather than a maker). The
 |-
 | orderid     || string || hex-encoded order ID
 |-
-| sigorder    || string || signature of the order data by account privkey
+| sig         || string || client hex-encoded signature of the serialized order data. serialization described below
 |-
 | address     || string || address where the matched client will send funds
 |}
@@ -884,7 +918,7 @@ crosses the spread (i.e. a taker rather than a maker). The
 {|
 ! field     !! type   !! description
 |-
-| sigorder  || string || signature of the order by server
+| sig       || string || server hex-encoded signature of the serialized order, after adding the DEX timestamp
 |-
 | server time || int  || the server's UNIX timestamp
 |}
@@ -942,7 +976,7 @@ the epoch match cycle) is left unfilled.
 |-
 | orderid   || string || hex-encoded order ID
 |-
-| sigorder  || string || signature of the order data by account privkey
+| sig       || string || client hex-encoded signature of the serialized order data. serialization described below
 |-
 | address   || string || address where the matched client will send funds
 |}
@@ -952,7 +986,7 @@ the epoch match cycle) is left unfilled.
 {|
 ! field     !! type   !! description
 |-
-| sigorder  || string || signature of the order by server
+| sig       || string || server hex-encoded signature of the order by server, after adding the DEX timestamp
 |-
 | server time || int  || the server's UNIX timestamp
 |}
@@ -962,7 +996,7 @@ the epoch match cycle) is left unfilled.
 {|
 ! field      !! size (bytes)  !! description
 |-
-| prefix     || 65 || [[utxo-preparation|the order prefix]]
+| prefix     || 65 || [[#UTXO_Preparation|the order prefix]]
 |-
 | UTXO count || 1  || The number of backing UTXOs
 |-
@@ -970,7 +1004,7 @@ the epoch match cycle) is left unfilled.
 |-
 | side      || 1 || 0 for buy, 1 for sell
 |-
-| quantity   || 8 || quanity to buy or sell (atoms)
+| quantity   || 8 || quantity to buy or sell (atoms)
 |-
 | time in force || 1 || 0 for ''standing'', 1 for ''immediate''
 |-
@@ -1019,9 +1053,10 @@ there is no change to the account's
 Cancel orders remove standing limit orders from the order book.
 A client cannot cancel a market order or a limit order with time in force
 ''immediate''. Further, due to the epoch-based pseudorandom matching process, a
-market order submitted in the same epoch as the limit order has a 50% chance of
-being processed before the order it cancels, resulting in an error.This is by
-design and discourages certain types of spoofing.
+cancel order submitted in the same epoch as it's corresponding limit order has
+a 50% chance of being processed before the order it cancels, resulting in an
+error.
+This is by design and discourages certain types of spoofing.
 
 '''JSON-RPC method:''' <code>cancel</code>, '''originator:''' client
 
@@ -1036,7 +1071,7 @@ design and discourages certain types of spoofing.
 |-
 | orderid   || string || hex-encoded order ID
 |-
-| sigorder  || string || signature of the serialized cancel order by account privkey
+| sig       || string || client hex-encoded signature of the serialized order data. serialization described below
 |}
 
 '''Response parameters'''
@@ -1044,7 +1079,7 @@ design and discourages certain types of spoofing.
 {|
 ! field     !! type   !! description
 |-
-| sigorder  || string || signature of the order by server
+| sig       || string || server hex-encoded signature of the serialize order data, after adding the DEX timestamp
 |-
 | server time || int  || the server's UNIX timestamp
 |}
@@ -1069,19 +1104,19 @@ DEX will send a list of match notifications.
 {|
 ! field     !! type   !! description
 |-
-| orderid   || string || hex-encoded order ID
+| orderid   || string || order ID
 |-
 | matchid   || int    || the match ID to use for progress notifications
 |-
 | quantity  || int    || the matched amount, in atoms of the base asset
 |-
-| rate      || int    || the rate that the order matched at, as quote asset per unit base asset
+| rate      || int    || the rate that the order matched at (as quote asset per unit base asset, atoms)
 |-
 | address   || string || the client's receiving address
 |-
 | timestamp || int    || UTC timestamp. order broadcast time
 |-
-| sig       || string || the DEX's signature of the serialized notification data
+| sig       || string || server hex-encoded signature of the serialized notification data. serialization described below
 |}
 
 The client will be responsible for serializing the notification and checking
@@ -1097,7 +1132,7 @@ The client will return a list of signed match acknowledgements.
 |-
 | matchid   ||  int  || the match ID
 |-
-| sig       ||  string || client's hex-encoded signature of the notification data.
+| sig       ||  string || client hex-encoded signature of the serialized notification data.
 |}
 
 '''Match notification serialization'''
@@ -1105,7 +1140,7 @@ The client will return a list of signed match acknowledgements.
 {|
 ! field      !! size (bytes)  !! description
 |-
-| orderid    || 16  || the order ID
+| orderid    || 32 || the order ID
 |-
 | matchid    || 8  || the ID assigned to this match
 |-
@@ -1125,31 +1160,31 @@ for verification and relay to the counterparty.
 '''JSON-RPC method:''' <code>progress</code>, '''originator:''' client
 
 {|
-! field     !! type   !! description
+! field      !! type   !! description
 |-
-| tx type || string || one of "init" or "redeem"
+| swap stage || string || one of "init" or "redeem"
 |-
-| matchid || int    || the matchid, retreived from the [[#Match_notifications|match notification]]
+| matchid    || int    || the matchid, retrieved from the [[#Match_notifications|match notification]]
 |-
-| txid    || string || the hex-encoded transaction ID
+| txid       || string || the hex-encoded transaction ID
 |-
-| vout    || int    || the output index
+| vout       || int    || the output index
 |-
-| timestamp || int    || UTC timestamp. order broadcast time
+| timestamp  || int    || UTC timestamp. order broadcast time
 |-
-| sig     || string || the client's signature of the serialized progress notification
+| sig        || string || client signature of the serialized progress notification. serialization described below
 |}
 
 '''DEX Acknowledgement'''
 
 {|
-! field   !! type   !! description
+! field      !! type   !! description
 |-
-| matchid ||  int  || the match ID
+| matchid    ||  int  || the match ID
 |-
-| tx type || string || one of "init" or "redeem"
+| swap stage || string || one of "init" or "redeem"
 |-
-| sig     ||  string || client's hex-encoded signature of the serialized progress notification
+| sig        ||  string || client hex-encoded signature of the serialized progress notification. serialization described below
 |}
 
 
@@ -1162,13 +1197,69 @@ for verification and relay to the counterparty.
 |-
 | matchid    || 8  || the ID assigned to this match
 |-
-| tx type    || 1  || 0 for intialization transaction, 1 for redemption
+| swap stage || 1  || 0 for initialization transaction, 1 for redemption
 |-
 | tx hash    || 32  || the transaction hash
 |-
 | vout       || 4 || the output index
 |-
 | timestamp || 8  || the client's UNIX timestamp
+|}
+
+===Match revocation===
+
+A match can be revoked by the server if a client fails to act within the
+[[#Exchange_Variables|broadcast timeout]]. A match revocation will result in
+penalties for the violating party only.
+The revoked match quantity is not added back to the orderbook in any form.
+
+'''JSON-RPC method:''' <code>revoke_match</code>, '''originator:''' DEX
+
+{|
+! field    !! type   !! description
+|-
+| orderid  || string || order ID
+|-
+| matchid  ||  int  || the match ID
+|-
+| sig      || string || server hex-encoded signature of serialized revocation. serialization described below
+|}
+
+'''Revocation serialization'''
+
+{|
+! field      !! size (bytes)  !! description
+|-
+| orderid    || 32  || the order ID
+|-
+| matchid    || 8  || the ID assigned to this match
+|}
+
+==Trade Suspension==
+
+There are a number of scenarios where the server may suspend operations,
+intentionally or not.
+During trade suspension, standing limit orders are not revoked. If the server
+intentionally suspends operations, they should provide a notification to
+connected clients as early as possible, ideally with several epochs for the
+client to get their orders situated before matching ceases.
+The epoch specified in the suspension notification is the first epoch for which
+orders will no longer be accepted. Users should expect to lose connection
+during suspension. When possible, the server should settle all existing matches
+before closing connections. If that is not possible, clients will need to
+reconnect and complete settlement when the server comes back online.
+If the server disconnects without notice, it is expected that orders placed
+during the current epoch are revoked at no penalty to the client.
+
+Standing limit order are only revoked (no penalty) if the client does not
+reconnect before the next [[#Session_Authentication|startepoch]].
+
+'''JSON-RPC method: ''' <code>suspension</code>, '''originator:''' DEX
+
+{|
+! field      !! type   !! description
+|-
+| epoch      || int    || the epoch in which the suspension will start
 |}
 
 ==Atomic Settlement==
@@ -1240,7 +1331,7 @@ a key known only to herself.
 From the key, Alice generates a “lock” and constructs an output script
 such that if someone can provide both Alice’s key and the pubkey for Bob’s
 specified address, they can spend the output.
-In practice, the key is simply a random 32-byte number, and the lock is it’s
+In practice, the key is simply a random 32-byte number, and the lock is its
 hash.
 
 In addition, Alice constructs the output script with a second, alternative lock
@@ -1259,7 +1350,7 @@ transaction'''. He uses Alice's lock here as well, and creates an output script
 satisfied by Alice’s key and the pubkey for Alice’s address.
 
 Bob sets his timelock to 24 hours.
-Bob should also check that the timelock in Alice's initization is set to 48
+Bob should also check that the timelock in Alice's initialization is set to 48
 hours.
 If Alice’s timelock duration is set near or below Bob’s timelock duration, Alice
 could potentially spend the DCR output before Bob.
@@ -1316,7 +1407,7 @@ order is returned to the order book and is immediately able to match again.
 '''B4''': As the maker, Alice goes first again.
 She groups her matches from the epoch and creates two different keys, one for
 Bob and one for Carl. She sets her timelocks to 48 hours.
-'''Alice broadcasts her initializaiton transaction''' to the Decred network and
+'''Alice broadcasts her initialization transaction''' to the Decred network and
 informs the DEX about the transaction details, which the DEX relays to Bob and
 Carl.
 
@@ -1337,18 +1428,21 @@ behavior that contribute to a smooth DEX experience for humans.
 
 ===Rules of Community Conduct===
 
-====Rule 1: Every match must be fully settled
+====Rule 1: Every match must be fully settled====
 
-In the event that the taker fails to start the atomic swap process within a
-pre-defined timeout period with their initialization transaction, the maker
-will be notified that order execution is terminated due to failure of the taker
-to accept the order. The Maker's limit order will not go
-back on the order book, but they may be given the option to replace the order.
+Swap transactions must be created at the correct times (see
+[[#Exchange_Variables|broadcast timeout]]).
+
+In the event that the maker fails to start the atomic swap process with their
+initialization transaction, the taker will be notified that order execution is
+terminated due to failure of the taker to accept the order. The Maker's limit
+order will not go back on the order book, but they may be given the option to
+replace the order.
 
 In the event that the taker fails to respond to the maker's initialization
 transaction, the maker will incur no violation.
 
-====Rule 2: An account's cancellation ratio must remain below the threshold
+====Rule 2: An account's cancellation ratio must remain below the threshold====
 
 The cancellation ratio is the ratio of the count of cancelled orders to the
 count of completed orders on an account. The cancellation threshold is set
@@ -1359,11 +1453,7 @@ limit order, or when a connection is dropped before an order is filled.
 Cancellation of a partially filled order is counted as a full cancellation.
 The cancellation ratio is evaluated on a 25-order rolling window.
 
-There may be cases when the order is revoked by the DEX, e.g. during an
-outage or while performing maintenance. In this case, no cancellations or
-completions are added to the account statistics.
-
-====Rule 3: Transaction outputs must be properly sized
+====Rule 3: Transaction outputs must be properly sized====
 
 The swap output value must be sized to exactly the matched amount. The fee rate
 must be at least the minimum value set by the DEX. It is the client's
@@ -1382,13 +1472,13 @@ for minor, first-time or infrequent conduct violations.
 
 ==Data API==
 
-Trade history will be made available to both WebSocket and HTTP clients.
+Trade history will be made available to both websocket and HTTP clients.
 
 ==Exchange Administration==
 
 Operation of the DEX will require substantial administrative labor.
-High throughput networking and high performance hardware are expected
-requirements.
+High throughput and low latency networking and high performance hardware are
+expected requirements.
 Historical trade data should be archived for some reasonable amount of time,
 if not forever.
 Clients will expect near-perfect uptime and long-term operation.
@@ -1408,7 +1498,7 @@ as possible.
 |-
 | market&nbsp;buy&nbsp;buffer || [[#Market_Buy_Orders|Market Buy Orders]] || unitless ratio || 1.25
 |-
-| registration&nbsp;fees || [[#Fees|Fees]] || atoms || 1e8 = 1 DCR
+| registration&nbsp;fees || [[#Fees|Fees]] || atoms || 1e8 (1 DCR)
 |-
 | cancellation&nbsp;threshold || [[Rule_2_An_accounts_cancellation_ratio_must_remain_below_the_threshold|Rule 2]] || unitless ratio || 0.6
 |}
@@ -1439,6 +1529,8 @@ See also [[#Exchange_Variables|Exchange Variables]].
 
 &#91;3&#93; [https://github.com/decred/atomicswap Atomic Swaps]
 
-&#91;4&#93; [https://tools.ietf.org/html/rfc8446 Transport Layer Security 1.3]
+&#91;4&#93; [https://tools.ietf.org/html/rfc6455 The WebSocket Protocol]
 
-&#91;5&#93; [https://www.jsonrpc.org/specification JSON-RPC 2.0 Specification] 
+&#91;5&#93; [https://tools.ietf.org/html/rfc8446 Transport Layer Security 1.3]
+
+&#91;6&#93; [https://www.jsonrpc.org/specification JSON-RPC 2.0 Specification]

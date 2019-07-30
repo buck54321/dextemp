@@ -534,7 +534,7 @@ The server immediately sends their receipt and then closes the connection.
 Once the transaction is mined and has the
 [[#Exchange_Variables|requisite number of confirmations]], the client
 should [[#Session_Authentication|create a new authenticated connection]].
-If the client attempts to connect before <code>minconf</code> confiramation, the
+If the client attempts to connect before <code>minconf</code> confirmations, the
 DEX should reject the connection outright.
 
 ==Client Order Management==
@@ -592,10 +592,15 @@ If the client connects shortly after a [[#Trade_Suspension|trade suspension]],
 it's possible that trading will not commence until a future epoch. The DEX
 response will indicate when trade did or will begin.
 
+If a client unexpectedly disconnects with active orders, the orders may match in
+the client's absence. A list of any pending matches is included in the response.
+
 {|
 ! field      !! type   !! description
 |-
 | startepoch || int   || the epoch at which trading did or will commence. May be in the future e.g. [[#Trade_Suspension|after maintenance]]
+|-
+| matches    || &#91;object&#93; || list of [[#Match_notifications|Match objects]]
 |}
 
 ===Connection Persistence===
@@ -612,7 +617,7 @@ may be auto-cancelled by the server.
 These cancellations will count toward the client's
 [[#Rules_of_Community_Conduct|cancellation ratio]], so could potentially result
 in penalties.
-The client should manage there orders carefully to ensure that this doesn't
+The client should manage their orders carefully to ensure that this doesn't
 occur.
 
 Market orders and limit orders with time in force ''immediate'' are not
@@ -781,7 +786,7 @@ from '''''R<sub>z</sub>''''' and the ''order quantity'', '''''Q'''''.
 
 The base fees scale linearly with order size, but the actual realized portion of
 the base fees, '''''f<sub>fin</sub>''''', can only be known to fall within a
-range '''''r s <= f<sub>fin</sub> <= f<sub>base</sub> Q '''''.
+range '''''r s &#8804; f<sub>fin</sub> &#8804; f<sub>base</sub> '''''.
 
 The client also covers the '''backing fees''' associated with spending their
 backing UTXOs, '''''f<sub>utxo</sub>'''''.
@@ -904,7 +909,7 @@ crosses the spread (i.e. a taker rather than a maker). The
 |-
 | timeinforce || string || one of ''standing'' or ''immediate''
 |-
-| utxos       ||  &#91;[[#UTXO_Preparation|UTXO object]]&#93; || list of backing UTXOs
+| utxos       ||  &#91;[[#UTXO_Preparation|UTXO]]&#93; || list of backing UTXOs
 |-
 | orderid     || string || hex-encoded order ID
 |-
@@ -972,7 +977,7 @@ the epoch match cycle) is left unfilled.
 |-
 | ordersize || int    || order size, in atoms (*1e8). See notes on market buy orders below.
 |-
-| utxos     || &#91;[[#UTXO_Preparation|UTXO object]]&#93; || list of backing UTXOs
+| utxos     || &#91;[[#UTXO_Preparation|UTXO]]&#93; || list of backing UTXOs
 |-
 | orderid   || string || hex-encoded order ID
 |-
@@ -1029,7 +1034,7 @@ constraints of other types of orders.
 Since the market may move before the order is matched, at the time of submission
 it is not known with certainty how many lots will match.
 For orders that are nearly 1 lot, it is possible for no matching to occur
-because by the time the order is matched.
+because by the time the order is matched it cannot afford a single lot.
 The DEX server maintains an interest in ensuring that only valid orders that
 can match are accepted, so market buy orders must be handled carefully to make
 sure they remain valid.
@@ -1097,7 +1102,7 @@ This is by design and discourages certain types of spoofing.
 ===Match notifications===
 
 If the client's order has one or more matches at the end of a match cycle, the
-DEX will send a list of match notifications.
+DEX will send a list of '''Match objects'''.
 
 '''JSON-RPC method:''' <code>match</code>, '''originator:''' DEX
 
@@ -1239,20 +1244,28 @@ The revoked match quantity is not added back to the orderbook in any form.
 
 There are a number of scenarios where the server may suspend operations,
 intentionally or not.
-During trade suspension, standing limit orders are not revoked. If the server
-intentionally suspends operations, they should provide a notification to
-connected clients as early as possible, ideally with several epochs for the
-client to get their orders situated before matching ceases.
+During trade suspension, standing limit are not necessarily revoked.
+
+If the server intentionally suspends operations, they should provide a
+notification to connected clients as early as possible, ideally with several
+epochs for the client to get their orders situated before matching ceases.
 The epoch specified in the suspension notification is the first epoch for which
 orders will no longer be accepted. Users should expect to lose connection
 during suspension. When possible, the server should settle all existing matches
 before closing connections. If that is not possible, clients will need to
 reconnect and complete settlement when the server comes back online.
-If the server disconnects without notice, it is expected that orders placed
-during the current epoch are revoked at no penalty to the client.
 
-Standing limit order are only revoked (no penalty) if the client does not
-reconnect before the next [[#Session_Authentication|startepoch]].
+If the server disconnects without notice, it is expected that orders placed
+during the current epoch are revoked at no penalty to the client and that
+standing limit orders are persisted.
+
+The suspension notification may indicate that standing limit orders will not be
+persisted.
+This would be the case if the DEX needs to change an asset variable such as
+the lot size or minimum transaction fee rate.
+
+If standing limit orders are persisted, they will be auto-revoked if the client
+does not reconnect before the next [[#Session_Authentication|startepoch]].
 
 '''JSON-RPC method: ''' <code>suspension</code>, '''originator:''' DEX
 
@@ -1260,7 +1273,9 @@ reconnect before the next [[#Session_Authentication|startepoch]].
 ! field      !! type   !! description
 |-
 | epoch      || int    || the epoch in which the suspension will start
-|}
+|-
+| persist    || bool   || whether standling limit order's will persist through the suspension
+ |}
 
 ==Atomic Settlement==
 
@@ -1424,7 +1439,7 @@ Bob and Carl then follow up with their own redemptions.
 
 By registering, clients agree to abide by the rules described here. These rules
 are designed to ensure that clients are acting in good faith and maintaining
-behavior that contribute to a smooth DEX experience for humans.
+behaviors that contribute to a smooth DEX experience for humans.
 
 ===Rules of Community Conduct===
 
@@ -1445,11 +1460,12 @@ transaction, the maker will incur no violation.
 ====Rule 2: An account's cancellation ratio must remain below the threshold====
 
 The cancellation ratio is the ratio of the count of cancelled orders to the
-count of completed orders on an account. The cancellation threshold is set
-by the DEX operator.
+count of completed orders.
+The cancellation threshold is set by the DEX operator.
 An order is considered completed when all matches have fully settled.
 An order is considered cancelled when a cancel order is matched to a standing
-limit order, or when a connection is dropped before an order is filled.
+limit order. The server may also cancel an order if the client's connection is
+dropped and the client fails to reconnect for more than 1 epoch duration.
 Cancellation of a partially filled order is counted as a full cancellation.
 The cancellation ratio is evaluated on a 25-order rolling window.
 
